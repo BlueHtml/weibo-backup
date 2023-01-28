@@ -1,0 +1,60 @@
+name: Run
+
+on:
+  workflow_dispatch:
+  repository_dispatch:
+
+jobs:
+  build:
+
+    if: github.actor == github.repository_owner
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@main
+      with:
+        path: 'data'
+    - uses: actions/checkout@main
+      with:
+        repository: 'dataabc/weibo-crawler'
+        path: 'py'
+    - name: Run
+      run: |
+        mv -f py/* .
+        [ -d data/weibo ] && mv -f data/weibo .
+        echo '${{ secrets.CONF }}' > config.json
+        curl -fLO '${{ secrets.DAV_URL }}user_id_list.txt' --user '${{ secrets.DAV_AUTH }}' --anyauth
+        cat user_id_list.txt
+        echo ==.==
+        ls -a
+        echo ==py==
+        ls py -a
+        echo ==data==
+        ls data -a
+        echo ==exec==
+        # pip install -r requirements.txt
+        pip install -U lxml pymongo requests tqdm pyopenssl
+        python weibo.py
+        echo ==.==
+        ls -a
+        cat user_id_list.txt
+    - name: Push
+      run: |
+        if [ -s log/error.log ]; then
+            cat log/error.log
+        else
+          mv -f weibo data
+          cd data
+          if (git status --porcelain || echo err) | grep -q .; then
+              echo '数据有更新，进行备份'
+              git config user.name actionBot
+              git config user.email github-actions@github.com
+              git add .
+              git commit -m "backup" -q
+              git push
+              echo '备份完成'
+          else
+              echo '无更新，不处理'
+          fi
+          curl -T '../user_id_list.txt' '${{ secrets.DAV_URL }}' --user '${{ secrets.DAV_AUTH }}' --anyauth
+        fi
